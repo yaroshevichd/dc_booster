@@ -2,12 +2,21 @@
 
 void measure_solar();
 void measure_light();
+void print_volts();
+void prepare();
 
-int gSolarPin = A0;
-int gLightPin = A1;
+const int gSolarPin = A0;
+const int gLightPin = A1;
+float gVoltsRef = .0;
+int gRawSolar = 0;
+float gVoltsSolar = .0;
+int gRawLight = 0;
+float gVoltsLight = .0;
 Scheduler gTaskMgr;
-Task gTaskMeasureSolar(1000, TASK_FOREVER, &measure_solar, &gTaskMgr);
-Task gTaskMeasureLight(1000, TASK_FOREVER, &measure_light, &gTaskMgr);
+Task gTaskPrepare(100, TASK_ONCE, &prepare, &gTaskMgr, true);
+Task gTaskMeasureSolar(1000, TASK_ONCE, &measure_solar, &gTaskMgr, false);
+Task gTaskMeasureLight(1000, TASK_ONCE, &measure_light, &gTaskMgr, false);
+Task gTaskPrint(1000, TASK_ONCE, &print_volts, &gTaskMgr, false);
 
 long readVcc()
 {
@@ -25,7 +34,7 @@ long readVcc()
 
 void setup()
 {
-  analogReference(INTERNAL);
+  //analogReference(INTERNAL);
   pinMode(gSolarPin, INPUT);
   pinMode(gLightPin, INPUT);
   Serial.begin(115200);
@@ -39,15 +48,46 @@ void loop()
 
 void measure_solar()
 {
-  float ref_volts = readVcc() / 1000.0;
-  int adc_val = analogRead(gSolarPin);
-  float volts = float(adc_val) * ref_volts / 1024.0;
+  gVoltsSolar = .0;
+  for (int i = 0; i < 5; i++)
+  {
+    gRawSolar = analogRead(gSolarPin);
+    gVoltsSolar += float(gRawSolar) * gVoltsRef / 1024.0;
+  }
+  gVoltsSolar /= 5.0;
+  gVoltsSolar *= (80.5 + 54.0) / 54.0;
+  gTaskMeasureLight.restartDelayed(100);
 }
 
 void measure_light()
 {
-  float ref_volts = readVcc() / 1000.0;
-  int adc_val = analogRead(gLightPin);
-  float volts = float(adc_val) * ref_volts / 1024.0;
+  gRawLight = analogRead(gLightPin);
+  gVoltsLight = float(gRawLight) * gVoltsRef / 1024.0;
+  gTaskPrint.restartDelayed(100);
 }
 
+void print_volts()
+{
+  Serial.print("Solar: ");
+  Serial.print(gRawSolar);
+  Serial.print(" ADC ");
+  Serial.print(gVoltsSolar);
+  Serial.print(" V; ");
+  Serial.print("Light: ");
+  Serial.print(gRawLight);
+  Serial.print(" ADC ");
+  Serial.print(gVoltsLight);
+  Serial.println(" V");
+  gTaskMeasureSolar.restartDelayed(1000);
+}
+
+void prepare()
+{
+  //gVoltsRef = readVcc() / 1000.0;
+  gVoltsRef = 1.1;
+  Serial.print("Ref: ");
+  Serial.print(gVoltsRef);
+  Serial.println(" V");
+  analogReference(INTERNAL);
+  gTaskMeasureSolar.restartDelayed(100);
+}
